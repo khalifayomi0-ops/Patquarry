@@ -116,7 +116,7 @@ window.doLogin = async () => {
 
     const { data: profile, error: profileError } = await supabaseClient
       .from("profiles")
-      .select("id, username, full_name, role, active, organization_id")
+      .select("id, username, full_name, role, active")
       .eq("id", data.user.id)
       .maybeSingle();
 
@@ -130,12 +130,6 @@ window.doLogin = async () => {
     if (!profile) {
       await supabaseClient.auth.signOut();
       alert("Your login account has no matching profile.");
-      return;
-    }
-
-    if (!profile.organization_id) {
-      await supabaseClient.auth.signOut();
-      alert("Your profile is not assigned to a business organization.");
       return;
     }
 
@@ -156,8 +150,7 @@ window.doLogin = async () => {
       n: profile.full_name || profile.username,
       r: profile.role === "admin" ? "admin" : "rep",
       id: profile.id,
-      active: profile.active,
-      organizationId: profile.organization_id
+      active: profile.active
     };
     sessionStorage.setItem("me", JSON.stringify(me));
 
@@ -192,7 +185,6 @@ async function loadData() {
       cost_price,
       low_stock_threshold,
       updated_at,
-      organization_id,
       products (
         id,
         product_name,
@@ -204,7 +196,6 @@ async function loadData() {
         )
       )
     `)
-    .eq("organization_id", me.organizationId)
     .order("updated_at", { ascending: false });
 
   const salesQuery = supabaseClient
@@ -219,7 +210,6 @@ async function loadData() {
       customer_phone,
       notes,
       status,
-      organization_id,
       created_at,
       payment_methods (
         id,
@@ -234,13 +224,12 @@ async function loadData() {
       )
     `)
     .order("sale_date", { ascending: false })
-    .eq("organization_id", me.organizationId)
     .order("created_at", { ascending: false });
 
   const [inventoryResult, salesResult, paymentResult] = await Promise.all([
     inventoryQuery,
     salesQuery,
-    supabaseClient.from("payment_methods").select("id, name, active, organization_id").eq("active", true).eq("organization_id", me.organizationId).order("name")
+    supabaseClient.from("payment_methods").select("id, name, active").eq("active", true).order("name")
   ]);
 
   if (inventoryResult.error) throw inventoryResult.error;
@@ -260,8 +249,7 @@ async function loadData() {
     price: Number(v.selling_price || 0),
     cost: Number(v.cost_price || 0),
     low: Number(v.low_stock_threshold ?? 5),
-    updatedAt: v.updated_at,
-    organizationId: v.organization_id
+    updatedAt: v.updated_at
   }));
 
   db.sales = (salesResult.data || []).map(s => ({
@@ -278,8 +266,7 @@ async function loadData() {
     paymentMethod: s.payment_methods?.name || "—",
     qty: Number(s.sale_items?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0),
     product: s.sale_items?.map(item => item.products?.product_name).filter(Boolean).join(", ") || "Sale",
-    createdAt: s.created_at,
-    organizationId: s.organization_id
+    createdAt: s.created_at
   }));
 
   db.paymentMethods = paymentResult.data || [];
@@ -585,8 +572,7 @@ window.saveEditInv = async (id) => {
     const { error: productError } = await supabaseClient
       .from("products")
       .update({ product_name: productName })
-      .eq("id", item.productId)
-      .eq("organization_id", me.organizationId);
+      .eq("id", item.productId);
     if (productError) throw productError;
 
     const { error: variantError } = await supabaseClient
@@ -600,8 +586,7 @@ window.saveEditInv = async (id) => {
         low_stock_threshold: low,
         updated_at: new Date().toISOString()
       })
-      .eq("id", item.id)
-      .eq("organization_id", me.organizationId);
+      .eq("id", item.id);
     if (variantError) throw variantError;
 
     const delta = quantity - item.q;
@@ -690,19 +675,17 @@ window.removeInv = async (id) => {
     const { error } = await supabaseClient
       .from("inventory_variants")
       .delete()
-      .eq("id", item.id)
-      .eq("organization_id", me.organizationId);
+      .eq("id", item.id);
     if (error) throw error;
 
     const { data: remaining, error: remainingError } = await supabaseClient
       .from("inventory_variants")
       .select("id")
-      .eq("product_id", item.productId)
-      .eq("organization_id", me.organizationId);
+      .eq("product_id", item.productId);
     if (remainingError) throw remainingError;
 
     if (!(remaining || []).length) {
-      const { error: productError } = await supabaseClient.from("products").delete().eq("id", item.productId).eq("organization_id", me.organizationId);
+      const { error: productError } = await supabaseClient.from("products").delete().eq("id", item.productId);
       if (productError) console.warn("Product record could not be removed:", productError);
     }
 
@@ -757,8 +740,7 @@ window.saveInv = async () => {
       .from("products")
       .insert({
         product_name: productName,
-        sku,
-        organization_id: me.organizationId
+        sku
       })
       .select("id, product_name, sku")
       .single();
@@ -769,7 +751,6 @@ window.saveInv = async () => {
       .from("inventory_variants")
       .insert({
         product_id: product.id,
-        organization_id: me.organizationId,
         color,
         size: null,
         quantity,
@@ -1024,7 +1005,7 @@ setInterval(async () => {
       me = null;
     }
 
-    if (me && supabaseClient && me.organizationId) {
+    if (me && supabaseClient) {
       loadData()
         .then(() => home("dashboard"))
         .catch(err => {
@@ -1034,8 +1015,6 @@ setInterval(async () => {
           login();
         });
     } else {
-      sessionStorage.removeItem("me");
-      me = null;
       login();
     }
   };
