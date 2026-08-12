@@ -81,3 +81,25 @@ No other interface styling/assets were changed.
 - Admins can **Remove** inventory items. Existing sales history is not intentionally deleted; if a database foreign-key constraint prevents removal of an item with sales history, the item should instead be adjusted to 0 stock.
 - Sales Rep inventory and all other existing functionality are unchanged.
 - Run the updated `supabase_sales_inventory.sql` in Supabase SQL Editor to add the admin inventory-management permissions and `adjust_inventory_v2` function.
+
+## Multi-business organization isolation (new)
+
+The frontend now uses the logged-in profile's `organization_id` and filters inventory, sales and payment methods to that business. New products/inventory are stamped with the current organization.
+
+Run `supabase_organization_isolation.sql` in Supabase SQL Editor after the existing sales/inventory SQL. This migration:
+
+- adds `organization_id` to categories, products, inventory variants, payment methods and sales;
+- assigns the existing catalog to **Admin 1 Business** and existing sales to the sales rep's organization;
+- adds organization-aware RLS restrictions;
+- prevents users from reading another organization's catalog, inventory or sales;
+- creates organization-specific Cash, Bank Transfer and POS payment methods when missing;
+- adds a trigger so the existing `record_sale_v2` function stamps new sales with the caller's organization;
+- keeps the existing atomic sale/inventory transaction function intact.
+
+Your verified accounts should therefore behave as follows:
+
+- `admin` → Admin 1 Business → administrator
+- `cashier1` → Admin 1 Business → sales representative
+- `cashier2` → Admin 2 Business → sales representative
+
+After running the migration, sign out and sign back in once so the browser session receives the latest `organization_id`.
